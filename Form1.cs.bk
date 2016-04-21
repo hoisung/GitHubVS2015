@@ -1,0 +1,612 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Xml;
+using NPOI;
+using NPOI.HSSF.UserModel;
+using NPOI.HPSF;
+using NPOI.SS.UserModel;
+using NPOI.POIFS.FileSystem;
+using NPOI.XSSF.UserModel;
+using System.Linq;
+
+using System.Web;
+namespace WindowsFormsApplication1
+{
+    
+    public partial class Form1 : Form
+    {
+        
+        WebClient webclient = new WebClient();
+        WebClient webclient1 = new WebClient();
+        XmlDocument XmlDoc = new XmlDocument();
+        TATMPostData DiagInfoQuary = new TATMPostData();
+        string savePath = "d:\\";
+        Byte[] pageData, postData;
+        string pageHtml = "";
+        string tems;
+        string CURRENT_COOKIE = "staffnum=37065; UserID=37065; lvl=4;";
+        string[] links;
+        string detailLink="";
+        string baseHost = "http://atmf.guoguang.com.cn:9812/";
+        string EName = "";
+        //******************date format*****************************
+        int year, month, day;
+
+        //**************field of exchange data***********************
+        //*****xlsx from online to the report file(xls)***********
+        XSSFWorkbook sourceWB;//源XLSX数据；
+        ReportFileColumns RFcolumns = new ReportFileColumns();
+        //*******************END*************************************
+        DetailField DFList = new DetailField();
+        public Form1()
+        {
+            InitializeComponent();
+            
+           // webclient.Credentials = CredentialCache.DefaultCredentials;
+           
+            // Byte[] pageData = webclient.DownloadData("http://atmf.guoguang.com.cn:9812/LOGIN.ASPX?__VIEWSTATEGENERATOR=C2EE9ABB&__VIEWSTATE=/wEPDwUKMTc4MjU4OTk2Mw9kFgICAw9kFgICAw9kFgQCAQ8PFgIeB1Zpc2libGVoZGQCBw8PFgIeBFRleHQFCOWvhiAg56CBZGQYAQUeX19Db250cm9sc1JlcXVpcmVQb3N0QmFja0tleV9fFgIFDEltYWdlQnV0dG9uMQUMSW1hZ2VCdXR0b24ychtZFHSolzjh0vEjGXxZY15vPnc=&__EVENTVALIDATION=/wEWBQL3p6eoDwLxz5rBDgLF8dDtCgLSwpnTCALSwtXkAuFEqr6SffQvWFQSJJLRLxgt8loz&tb_username=37067&tb_password=123456&ImageButton1.y=14&ImageButton1.x=20");
+
+            /*  pageHtml = Encoding.UTF8.GetString(pageData);           
+              XmlDoc =  GetHtmlNodes(pageHtml);
+              FormatingFormDatabase(XmlDoc);
+
+              using (StreamWriter sw = new StreamWriter("E:\\OUTPUT.TXT")) 
+               {
+                   //htm = sw.ToString();
+                   sw.Write(pageHtml);
+               }*/
+            formatDate();
+            setDateBoxValue();
+            textBox1.Text = "在“保存路径”中选择月报XLS文件保存路径.\r\n在‘开始日期’和‘结束日期’中设置需要获取的区域数据\r\n在‘工号’中输入要输出月报的工号\r\n*****************\r\n*****************\r\n**注意*，默认不生成非ATM单据数据，如果需生成非ATM类数据，请自己将导出的自助维修数据文件（“维修档案查询统计表.xls”）放在此软件目录中\r\n*****************\r\n*****************\r\n***注意***更换部件列数据为错误数据，如果有更换备件，请自己修改！！！！！！！";
+        }
+        private void JumpToDownloadPage()
+        {
+            webclient.Headers.Add("Accept", "image/gif, image/jpeg, image/pjpeg, application/x-ms-application, application/xaml+xml, application/x-ms-xbap, */*");
+            webclient.Headers.Add("Accept-Language", "zh-Hans-CN,zh-Hans;q=0.5");
+            webclient.Headers.Add("Accept-Encoding", "gzip, deflate");
+            webclient.Headers.Add("User-Agent", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.3; Trident/8.0; .NET4.0C; .NET4.0E; .NET CLR 2.0.50727; .NET CLR 3.0.30729; .NET CLR 3.5.30729)");
+            webclient.Headers.Add("Host", "atmf.guoguang.com.cn:9812");
+            //webclient.Headers.Add("Connection","Keep-Alive");
+            webclient.Headers.Add("Cookie", CURRENT_COOKIE);
+            pageData = webclient.DownloadData("http://atmf.guoguang.com.cn:9812/servicequary2.aspx");
+            pageHtml = Encoding.UTF8.GetString(pageData);
+            XmlDoc = GetHtmlNodes(pageHtml);
+            FormatingFormDatabase(XmlDoc);
+            DiagInfoQuary.TextBox5 = StarttingDate.Text;
+            DiagInfoQuary.TextBox6 = EndingDate.Text;
+            DiagInfoQuary.tb_staffno = UserId.Text;
+        }
+        public void formatDate()
+        {
+            DateTime nowdate = DateTime.Now;
+            year = nowdate.Year;
+            month = nowdate.Month;
+            day = nowdate.Day;
+
+        }
+        private void setDateBoxValue()
+        {
+            StarttingDate.Text = string.Format("{0}-{1}-{2}", year, month-1, day);
+            EndingDate.Text = string.Format("{0}-{1}-{2}", year, month, day);
+        }
+        public XmlDocument GetHtmlNodes(string pageHtml)
+        {
+            XmlDocument xml = new XmlDocument();
+            string doctype = "<!DOCTYPE html[<!ENTITY nbsp \" \"> <!ELEMENT input ANY> <!ATTLIST input id ID #REQUIRED>  <!ELEMENT a ANY> <!ATTLIST a id ID #REQUIRED>]>";
+            pageHtml = pageHtml.Substring(pageHtml.IndexOf("<html"));
+            pageHtml = doctype + pageHtml;
+            //pageHtml = pageHtml.Replace(" id", " ID");
+            pageHtml = pageHtml.Replace("xmlns=\"http://www.w3.org/1999/xhtml\"", "");
+            xml.Load(new StringReader(pageHtml));
+            return xml;
+           // XmlNamespaceManager xnm = new XmlNamespaceManager(XmlDoc.NameTable);
+            //xnm.AddNamespace("mxh", "http://www.w3.org/1999/xhtml");
+
+           // XmlNodeList nodelist = XmlDoc.SelectSingleNode(@"html/body/form").ChildNodes;
+
+           // GetFormdata(nodelist);
+           // int times = 0;
+           // tems = DateTime.Today.Date.ToString("yyyy-MM-dd");
+           // tems = DateTime.Today.AddMonths(-1).ToString("yyyy-MM-dd");
+            
+        }
+        private string getvalueById(XmlDocument DOC, string Id)
+        {
+            return DOC.GetElementById(Id).GetAttribute("value");
+        }
+        private string[] GetLinks(XmlDocument xml)
+        {
+            string[] links;
+            int i = 0;
+            int count = 0;
+           XmlNodeList  Xnlist = xml.GetElementsByTagName("a");
+            count = Xnlist.Count;
+            foreach (XmlNode xn in Xnlist) {
+                if ((((XmlElement)xn).GetAttribute("id") == string.Empty) | (xn.InnerText == string.Empty))
+                {
+                    count--;
+                }
+            }
+            
+            links = new string[count];
+            foreach (XmlNode xn in Xnlist)
+            {
+                if ((((XmlElement)xn).GetAttribute("id") != string.Empty) & (xn.InnerText != string.Empty))
+                {
+                    links.SetValue(((XmlElement)xn).GetAttribute("id"), i);
+                    i++;
+                }
+            }
+            for (i = 0; i < links.Length; i++)
+            {
+                links[i]=links[i].Replace("_", "$");
+            }
+            return links;
+        }
+        public void FormatingFormDatabase(XmlDocument xmlDOC)// GetFormdata(XmlNodeList XNL)
+        {
+
+            DiagInfoQuary.__VIEWSTATE = getvalueById(xmlDOC, "__VIEWSTATE").Replace("+", "%2B");
+            DiagInfoQuary.__EVENTVALIDATION = getvalueById(xmlDOC, "__EVENTVALIDATION").Replace("+", "%2B");
+            DiagInfoQuary.__VIEWSTATEGENERATOR = getvalueById(xmlDOC, "__VIEWSTATEGENERATOR").Replace("+", "%2B");
+            
+         /*    foreach (XmlNode childNode in XNL)
+             {
+                 int count = XNL.Count;
+                 //times++;
+                  if (childNode.NodeType.ToString() == "Element")
+                   {
+                       XmlElement childElement = (XmlElement)childNode;
+                       if (childElement.Name == "input" | childElement.Name == "select")
+                       {
+                           FieldInfo[] fieldinfo = DiagInfoQuary.GetType().GetFields();
+                       
+                           for (int i = 0; i < fieldinfo.Length; i++)
+                           {
+                               string temID = childElement.GetAttribute("id");
+                               if (temID == "__VIEWSTATE" | temID == "__EVENTVALIDATION" | temID == "__VIEWSTATEGENERATOR")
+                                   if (fieldinfo[i].Name == temID)
+                                   {
+                                       fieldinfo[i].SetValue(DiagInfoQuary, childElement.GetAttribute("value"));
+                                       // tems += fieldinfo[i].Name + '=' + childElement.GetAttribute("value");
+                                       // if (times < count)
+                                       // {
+                                       //     tems += '&';
+                                       // }
+                                   }
+                           }
+                       }
+
+                       else if (childNode.NodeType.ToString() == "Element")
+                           GetFormdata(childNode.ChildNodes);
+             }
+             }*/
+        }
+        public string GetbaseDetailFeildList(XmlDocument XN)
+        {
+            string tem ="";
+            FieldInfo[] FIs = DFList.GetType().GetFields();
+            foreach (FieldInfo fi in FIs)
+            {
+                fi.SetValue(DFList, XN.GetElementById(fi.Name).GetAttribute("value"));
+            }
+            FIs = DFList.GetType().GetFields();
+            foreach(FieldInfo fi in FIs)
+            {
+                tem +=string.Format("{0} is {1};\r\n",fi.Name,fi.GetValue(DFList));
+            }
+            tem += "***************************************";
+            return tem;
+        }
+        private void formatLinks()
+        {
+            // webclient1.Credentials = CredentialCache.DefaultCredentials;
+            // webclient.Headers.Add("cookie: servicedetailcook=8262423");
+            //String ResCookies = webclient.ResponseHeaders.Get("set-cookies");
+            //  webclient.Headers.Add(ResCookies);
+            // Byte[] pageData = webclient.DownloadData("http://atmf.guoguang.com.cn:9812/detail2.aspx");
+
+            
+           
+
+            tems = "";
+            DiagInfoQuary.TextBox5 = StarttingDate.Text;
+            DiagInfoQuary.TextBox6 = EndingDate.Text;
+            DiagInfoQuary.tb_staffno = UserId.Text;
+
+            doPost("list");
+            links= GetLinks(XmlDoc);
+            
+            // string pageHtml = Encoding.UTF8.GetString(pageData);
+            // GetHtmlNodes(pageHtml);
+
+            textBox1.Text = pageHtml;
+        }
+        public void doPost(string type) {
+            tems = "";
+            int i = 0;
+            FieldInfo[] finfoes = DiagInfoQuary.GetType().GetFields();
+            foreach (FieldInfo finfo in finfoes)
+            {
+
+                tems += finfo.Name + '=' + finfo.GetValue(DiagInfoQuary);
+                if (i < finfoes.Length - 1)
+                    tems += "&";
+                i++;
+            }
+            if (type == "detail")
+            {
+                tems = tems.Replace("&Button1=%E6%9F%A5++%E8%AF%A2", "");
+            }
+            else if(type == "downloadXLSX")
+            {
+                tems = tems.Replace("&Button1=%E6%9F%A5++%E8%AF%A2", "&Button2=%E5%AF%BC++%E5%87%BA");
+            }
+            //tems = tems.Replace("+", "%2B");
+            postData = Encoding.UTF8.GetBytes(tems);
+            webclient.Headers.Add("Content-Type", "application/x-www-form-urlencoded");
+            webclient.Headers.Set("ContentLength", tems.Length.ToString());
+            webclient.Headers.Set("Referer", "http://atmf.guoguang.com.cn:9812/servicequary2.aspx");
+            string uri = "http://atmf.guoguang.com.cn:9812/servicequary2.aspx";
+            HttpWebResponse res;
+            StreamReader s;
+                string[] links;
+                string temp = "";
+                try
+                {
+                    pageData = webclient.UploadData(uri, postData);
+                    if (type != "downloadXLSX")
+                    {
+                        pageHtml = Encoding.UTF8.GetString(pageData);
+                        Regex RX = new Regex(@"(?<=window\.open\(').*(?=','','')");
+                        detailLink = RX.Match(pageHtml).Value;
+                        XmlDoc = GetHtmlNodes(pageHtml);
+                        FormatingFormDatabase(XmlDoc);
+                        links = GetLinks(XmlDoc);
+                        temp = string.Join("\r\n", links);
+                        if (webclient.ResponseHeaders.Get("set-cookie") != null)
+                        {
+                        updateCookies(ref webclient, webclient.ResponseHeaders.Get("Set-Cookie"));
+                        }
+                     }
+                     else
+                     {
+                         Stream sm = new MemoryStream(pageData);
+                         sourceWB = new XSSFWorkbook(sm);
+                        // ISheet sheet = sourceWB.GetSheet("Sheet1");
+                         
+                }
+                }
+                catch (WebException we)
+                {
+                    res = (HttpWebResponse)we.Response;
+                    s = new StreamReader(res.GetResponseStream(), Encoding.UTF8);
+                    pageHtml = s.ReadToEnd();
+                }
+            
+            pageHtml += detailLink;
+        }
+        public void GetDetail(string Num ) {
+            DiagInfoQuary.__EVENTTARGET = Num;
+            
+        }
+        public void updateCookies(ref WebClient webClient ,string newCookies) {
+            newCookies= newCookies.Replace("; path=/","");
+            newCookies= newCookies.Replace(" HttpOnly,", "");
+            webclient.Headers.Set("Cookie", CURRENT_COOKIE + newCookies);
+            pageHtml = webclient.Headers.Get("Cookie");
+            
+        }
+        private void StarttingDate_TextChanged(object sender, EventArgs e)
+        {
+           // Regex RX = new Regex("(19|20)[0-9]{2}[- /.](0[1-9]|1[012])[- /.](0[1-9]|[12][0-9]|3[01])");
+        }
+
+        private void StarttingDate_Leave(object sender, EventArgs e)
+        {
+             Regex RX = new Regex("(19|20)[0-9]{2}[- /.](0[1-9]|1[012])[- /.](0[1-9]|[12][0-9]|3[01])");
+            // StarttingDate.Text = RX.Match(StarttingDate.Text).Value;
+            if (RX.IsMatch(StarttingDate.Text))
+            {
+                StarttingDate.Text = Regex.Replace(StarttingDate.Text, "[- /.]", "-");
+            }
+        }
+
+        private void SetupCookie()
+        {
+            CURRENT_COOKIE = string.Format("staffnum={0}; UserID={0}; lvl=4;",UserId.Text==""?"37067":UserId.Text);
+        }
+        private void doDownloadXLSX()
+        {
+            //GetDetail(links[0]);
+            // doPost("detail");
+            doPost("downloadXLSX");
+            textBox1.Text = pageHtml;
+        }
+
+        /* private void button3_Click(object sender, EventArgs e)
+         {
+             webclient1.Headers = webclient.Headers;
+             try { pageData = webclient1.DownloadData(baseHost+detailLink); }
+             catch (WebException we)
+             {
+                HttpWebResponse res = (HttpWebResponse)we.Response;
+                StreamReader s = new StreamReader(res.GetResponseStream(), Encoding.UTF8);
+                 pageHtml = s.ReadToEnd();
+             }
+             string DetailHtml = Encoding.UTF8.GetString(pageData);
+             XmlDocument tempXD = GetHtmlNodes(DetailHtml);
+             DetailHtml = GetbaseDetailFeildList(tempXD);
+
+             textBox1.Text = DetailHtml;
+         }
+         */
+        private bool checkUserID()
+        {
+            
+            if (textBox1.Text == "")
+                return false;
+            return true;
+        }
+        private bool isHaveOtherDataFile()
+        {
+            return File.Exists("维修档案查询统计表.xls");
+        }
+
+        private void button4_Click(object sender, EventArgs e)
+        {
+            
+            if (checkUserID())
+            {
+
+
+                updatetextbox();
+                SetupCookie();
+                JumpToDownloadPage();
+                doDownloadXLSX();
+                // ReportFile reportfile = new ReportFile("D:\\abcc.xls");
+                byte[] filebuffer = Properties.Resources.baseXLSRes;
+                Stream filestream = new MemoryStream(filebuffer);
+                ReportFile reportfile = new ReportFile(filestream);
+                int lenght = sourceWB.GetSheet("Sheet1").LastRowNum;
+                int Rowindex = 3;
+                List<ReportFileColumns> list = new List<ReportFileColumns>();
+
+                for (int i = 1; i <= lenght; i++)
+                {
+
+                    if (sourceWB.GetSheet("Sheet1").GetRow(i).GetCell(5).StringCellValue != "电话解决")
+                        list.Add(AppendATMDataToColumnsFormat(i));
+
+
+                }
+                bool havaotherfile = isHaveOtherDataFile();
+                if (havaotherfile)
+                {
+                    FileStream file = new FileStream("维修档案查询统计表.xls", FileMode.Open, FileAccess.Read);
+                    HSSFWorkbook otherFileData = new HSSFWorkbook(file);
+                    lenght = otherFileData.GetSheetAt(0).LastRowNum;
+                    ISheet sheet1 = otherFileData.GetSheetAt(0);
+                    for (int i = 1; i <= lenght; i++)
+                    {
+
+                        if (sheet1.GetRow(i).GetCell(16).StringCellValue != "电话解决")
+                            list.Add(AppendOtherDataToColumnsFormat(sheet1,i));
+
+
+                    }
+                    file.Close();
+                    File.Delete("维修档案查询统计表.xls");
+                }
+                list = (from c in list orderby c.MaintenanceDate ascending select c).ToList();
+                foreach (ReportFileColumns RFC in list)
+                {
+                    AppendToXlscell(reportfile, Rowindex, RFC);
+                    Rowindex++;
+                }
+                reportfile.setTitle(DateTime.Now);
+                EName = list[3].Engineer;
+                string currentNa = reportfile.updatefileName(EName);
+                reportfile.updatefilePath(savePath);
+                reportfile.WriteToFile();
+                textBox1.Text = "月报已生成.\r\n****************\r\n";
+                textBox1.Text += string.Format("路  径: {0};\r\n\r\n文件名： {1};", savePath, currentNa);
+            }
+            else
+            { textBox1.Text = "工号为空，请输入工号!"; }
+        }
+        private void updatetextbox()
+        {
+            textBox1.Text = "正在获取月报中...";
+        }
+        public void AppendToColumnsFormatForWebpage() {
+            RFcolumns.PaiID = DFList.PaiID;
+            RFcolumns.ServiceID = DFList.ServiceID;
+            RFcolumns.ProductID = DFList.MID;
+            RFcolumns.MaintenanceDate = DFList.AvTime;
+            RFcolumns.ErrorSrc = DFList.ErrorScr;
+            RFcolumns.DealSrc = DFList.DealScr;
+            RFcolumns.Engineer = DFList.staffnum;
+        }
+        public ReportFileColumns AppendOtherDataToColumnsFormat(ISheet sheet,int rowindex)
+        {
+            IRow Row = sheet.GetRow(rowindex);
+            ReportFileColumns temRFcolumns = new ReportFileColumns();
+            temRFcolumns.Model =getCellValue(Row, 12);//Row.GetCell(1).StringCellValue;
+            //temRFcolumns.Model = "HT-" + temRFcolumns.Model;
+            temRFcolumns.ProductID = getCellValue(Row, 11).Replace(temRFcolumns.Model+" ",""); //Row.GetCell(2).StringCellValue;
+            if (Row.GetCell(3).StringCellValue == "PM")
+            {
+                temRFcolumns.ErrorSrc = "PM";
+                temRFcolumns.DealSrc = "PM";
+            }
+            else if (Row.GetCell(3).StringCellValue.Substring(0, 2) == "升级")
+            {
+                temRFcolumns.ErrorSrc = "升级";
+                temRFcolumns.DealSrc = "升级";
+            }
+            else
+            {
+                temRFcolumns.ErrorSrc = getCellValue(Row, 17); //Row.GetCell(16).StringCellValue;
+                temRFcolumns.DealSrc = getCellValue(Row, 18); //Row.GetCell(17).StringCellValue;
+            }
+            string bank = getCellValue(Row, 6);
+            //bank = parseBankName(bank);
+            temRFcolumns.ClientName =  getCellValue(Row, 8); //Row.GetCell(29).StringCellValue;
+            temRFcolumns.Engineer = getCellValue(Row, 30); //Row.GetCell(20).StringCellValue;
+             //temRFcolumns.MaintenanceDate = getCellValue(Row, 24); //Row.GetCell(11).StringCellValue;
+            string temDate = getCellValue(Row, 24); //Row.GetCell(11).StringCellValue;
+            temRFcolumns.MaintenanceDate = temDate.Remove(temDate.IndexOf(' ')).Replace("-", "/");
+            temRFcolumns.PaiID = getCellValue(Row, 1); //Row.GetCell(3).StringCellValue;
+            temRFcolumns.ServiceID = getCellValue(Row, 15); //Row.GetCell(4).StringCellValue;
+            return temRFcolumns;
+        }
+        public ReportFileColumns AppendATMDataToColumnsFormat(int rowindex) {
+            IRow Row = sourceWB.GetSheet("Sheet1").GetRow(rowindex);
+            ReportFileColumns temRFcolumns = new ReportFileColumns();
+            temRFcolumns.Model ="HT"+getCellValue(Row, 1);//Row.GetCell(1).StringCellValue;
+            //temRFcolumns.Model = "HT-" + temRFcolumns.Model;
+            temRFcolumns.ProductID = getCellValue(Row, 0); //Row.GetCell(2).StringCellValue;
+            if (Row.GetCell(5).StringCellValue == "PM")
+            {
+                temRFcolumns.ErrorSrc = "PM";
+                temRFcolumns.DealSrc = "PM";
+            }
+            else if (Row.GetCell(5).StringCellValue.Substring(0, 2) == "升级")
+            {
+                temRFcolumns.ErrorSrc = "升级";
+                temRFcolumns.DealSrc = "升级";
+            }
+            else
+            {
+                temRFcolumns.ErrorSrc = getCellValue(Row, 16); //Row.GetCell(16).StringCellValue;
+                temRFcolumns.DealSrc = getCellValue(Row, 17); //Row.GetCell(17).StringCellValue;
+            }
+            string bank = getCellValue(Row, 25);
+            bank = parseBankName(bank);
+            temRFcolumns.ClientName =bank+ getCellValue(Row, 29); //Row.GetCell(29).StringCellValue;
+            temRFcolumns.Engineer = getCellValue(Row, 20); //Row.GetCell(20).StringCellValue;
+            temRFcolumns.MaintenanceDate = getCellValue(Row, 11); //Row.GetCell(11).Stri
+            temRFcolumns.PaiID = getCellValue(Row, 3); //Row.GetCell(3).StringCellValue;
+            temRFcolumns.ServiceID = getCellValue(Row, 4); //Row.GetCell(4).StringCellValue;
+            return temRFcolumns;
+        }
+        private string parseBankName(string bank)
+        {
+            if (bank == "邮政公司")
+                return "邮政";
+            else if (bank == "广西农信")
+                return "农信";
+            else if (bank == "中国银行")
+            {
+                return "中行";
+            }
+            return "";
+        }
+        public string getCellValue(IRow row, int index)
+        {
+            string value = "";
+            ICell cell = row.GetCell(index);
+            if (cell != null)
+                if (cell.CellType == CellType.Numeric)
+                {
+                    double NumValue = cell.NumericCellValue;
+                    if (NumValue - (int)NumValue != 0)
+                        value = cell.DateCellValue.ToString("yyyy/MM/dd");
+                    else
+                        value = cell.NumericCellValue.ToString();
+                }else
+               value = cell.StringCellValue; 
+            value = (value == null) ? "" : value;
+            return value;
+        }
+
+        private void button5_Click(object sender, EventArgs e)
+        {
+            string path = "";
+           if( folderBrowserDialog1.ShowDialog()==DialogResult.OK||folderBrowserDialog1.ShowDialog()==DialogResult.Yes)
+                path =folderBrowserDialog1.SelectedPath;
+            int length = path.Length;
+            path =path.Substring(length-1)=="\\"?path:path+"\\";
+            SavePathViewBox.Text = path;
+            savePath = path;
+
+        }
+
+        private void AppendToXlscell(ReportFile RF,int index,ReportFileColumns RFC)
+        {
+            ISheet sheet1 = RF.hssfworkbook.GetSheet("Sheet1");
+            int Rowindex = index;
+            IRow newRow = sheet1.CreateRow(Rowindex);
+            newRow.HeightInPoints = 20;
+            ICellStyle cellstyle = RF.hssfworkbook.CreateCellStyle();
+            cellstyle.BorderBottom = NPOI.SS.UserModel.BorderStyle.Thin;
+            cellstyle.BorderTop = NPOI.SS.UserModel.BorderStyle.Thin;
+            cellstyle.BorderLeft = NPOI.SS.UserModel.BorderStyle.Thin;
+            cellstyle.BorderRight = NPOI.SS.UserModel.BorderStyle.Thin;
+            cellstyle.VerticalAlignment = VerticalAlignment.Center;
+            for (int i = 0; i < 13; i++)
+            {
+                
+                ICell cell = newRow.CreateCell(i);
+                cell.SetCellValue((string)RFC.GetType().GetFields()[i].GetValue(RFC));
+                cell.CellStyle = cellstyle;
+                if (i == 0)
+                {
+                   
+                   // cell.CellStyle.WrapText = true;
+                }
+            }
+            sheet1.ForceFormulaRecalculation = true;
+            
+        }
+
+        private void AppendToXlscell(ReportFile RF) {
+            ISheet sheet1 = RF.hssfworkbook.GetSheet("Sheet1");
+            int RowCount = sheet1.LastRowNum+1;
+            HSSFWorkbook hssfworkbook = new HSSFWorkbook();
+            ICellStyle  cellstyle= hssfworkbook.CreateCellStyle();
+            cellstyle.BorderBottom = NPOI.SS.UserModel.BorderStyle.Thin;
+            cellstyle.BorderTop = NPOI.SS.UserModel.BorderStyle.Thin;
+            cellstyle.BorderLeft = NPOI.SS.UserModel.BorderStyle.Thin;
+            cellstyle.BorderRight = NPOI.SS.UserModel.BorderStyle.Thin;
+            IRow newRow =  sheet1.CreateRow(RowCount);
+            for (int i = 0; i< 13; i++) {
+                ICell cell = newRow.CreateCell(i);
+                cell.SetCellValue((string)RFcolumns.GetType().GetFields()[i].GetValue(RFcolumns));
+                cell.CellStyle = cellstyle;
+                if (i == 5 | i == 6)
+                {
+                    cell.CellStyle.WrapText = true;
+                }
+            }
+            sheet1.ForceFormulaRecalculation = true;
+            RF.WriteToFile();
+        }
+        private void EndingDate_Leave(object sender, EventArgs e)
+        {
+            Regex RX = new Regex("(19|20)[0-9]{2}[- /.](0[1-9]|1[012])[- /.](0[1-9]|[12][0-9]|3[01])");
+            if (RX.IsMatch(EndingDate.Text))
+            {
+                EndingDate.Text = Regex.Replace(EndingDate.Text, "[- /.]", "-");
+            }
+        }
+
+        public string UrlDecode(string url)
+        {
+            return HttpUtility.UrlEncode(url);
+        }
+    }
+}
